@@ -1,0 +1,394 @@
+<?php
+// $Id$
+// vim: filetype=php ts=2 sw=2 expandtab:
+
+/**
+ * @file
+ * This file is the install code for implementing Yubico validation server in drupal
+ */
+
+/**
+ * Implements hook_schema()
+ */
+function yubivs_schema() {
+  $schema['node_yubikey'] = array(
+    // example (partial) specification for table "node"
+    'description' => 'The additions table for yubikey nodes.',
+    'fields' => array(
+      'nid' => array(
+        'description' => 'The primary identifier for a node.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE),
+      'vid' => array(
+        'description' => 'The current {node_revision}.vid version identifier.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0),
+      'yubikey_type' => array(
+        'description' => 'The yubikey type',
+        'type' => 'varchar',
+        'length' => '4',
+        'not null' => TRUE,
+        'default' => ''),
+      'session_counter' => array(
+        'description' => 'The yubikey session counter of this node.',
+        'type' => 'int',
+        'size' => 'small', // 2Bytes
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0),
+      'session_use' => array(
+        'description' => 'The yubikey session use counter of this node.',
+        'type' => 'int',
+        'size' => 'tiny', // need 1Byte get 1 in mysql, 2 in pg
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0),
+     'last_timestamp' => array(
+        'description' => 'The last timestamp used of this yubikey.',
+        'type' => 'int',
+        'size' => 'medium', // need 3Bytes get 3 in mysql, 4 in pg
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0),
+     'last_timestamp_use' => array(
+        'description' => 'The last used of this yubikey.',
+        'type' => 'int',
+        'size' => 'big', // 64bit timestamp, 8bytes
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0),
+      ),
+    'indexes' => array(
+      'public_id' => array('public_id'),
+      ),
+    'unique keys' => array(
+      'nid_vid' => array('nid', 'vid'),
+      'vid'     => array('vid')
+      ),
+    'foreign keys' => array(
+      'node' => array(
+        'table' => 'node',
+        'columns' => array('nid' => 'nid'),
+        ),
+      'node_revision' => array(
+        'table' => 'node_revision',
+        'columns' => array('vid' => 'vid'),
+        ),
+       ),
+    'primary key' => array('nid'),
+  );
+  //return $schema;
+}
+
+function yubivs_enable() {
+  // Disable comments ! i don't want comments on my nodes !
+  $comment_status = variable_get("comment_node_yubikey", COMMENT_NODE_CLOSED);
+  variable_set("comment_node_yubikey", $comment_status);
+}
+
+function yubivs_install() {
+  node_types_rebuild();
+
+  // Create all the fields we are adding to our content type.
+  // http://api.drupal.org/api/function/field_create_field/7
+  foreach (_yubivs_installed_fields() as $field) {
+    field_create_field($field);
+  }
+
+  // Create all the instances for our fields.
+  // http://api.drupal.org/api/function/field_create_instance/7
+  foreach (_yubivs_installed_instances() as $instance) {
+    $instance['entity_type'] = 'node';
+    $instance['bundle'] = 'node_yubikey';
+    field_create_instance($instance);
+  }
+}
+
+function yubivs_uninstall() {
+  // Loop over any remaining field instances attached to the node_yubikey
+  // content type (such as the body field) and delete them individually.
+  // http://api.drupal.org/api/function/field_delete_field/7
+  $instances = field_info_instances('node', 'node_yubikey');
+  foreach ($instances as $instance_name => $instance) {
+    field_delete_instance($instance);
+  }
+
+  // Delete our content type
+  // http://api.drupal.org/api/function/node_type_delete/7
+  node_type_delete('node_yubikey');
+
+  // Delete all the fields we added.
+  // http://api.drupal.org/api/function/field_delete_field/7
+  foreach (_yubivs_installed_fields() as $field) {
+    //dsm($field);
+    field_delete_field($field['field_name']);
+  }
+
+
+  // Purge all field infromation
+  // http://api.drupal.org/api/function/field_purge_batch/7
+  field_purge_batch(1000);
+}
+
+function _yubivs_installed_fields() {
+  $t = get_t();
+
+  return array(
+    'yubikey_public_id' => array(
+      'field_name'  => 'yubikey_public_id',
+      'label'       => $t('Yubikey Public ID'),
+      'cardinality' => 1,
+      'type'        => 'text',
+      'settings'    => array(
+        'max_length' => 12,
+      ),
+    ),
+    'yubivs_hexadecimal' => array(
+      'field_name'  => 'yubivs_hexadecimal',
+      'label'       => $t('Yubikey hexadecimal field'),
+      'cardinality' => 1,
+      'type'        => 'yubivs_hexadecimal',
+    ),
+    'yubivs_type' => array(
+      'field_name'  => 'yubivs_type',
+      'type'        => 'list_text',
+      'label'       => $t('Yubikey type field'),
+      'cardinality' => 1,
+      'translatable'=> 0,
+      'settings'    => array(
+        'allowed_values' => "Yubikey Firmware 1.0\nYubikey Firmware 2.0\nYubikey Firmware 2.1",
+      ),
+    ),
+    'yubikey_session_counter' => array(
+      'field_name'  => 'yubikey_session_counter',
+      'type'        => 'number_decimal',
+      'label'       => $t('Session counter'),
+      'cardinality' => 1,
+      'translatable'=> 0,
+      'settings'    => array(
+        'precision' => '5',
+        'scale'     => '0',
+      ),
+    ),
+    'yubikey_session_use' => array(
+      'field_name'  => 'yubikey_session_use',
+      'type'        => 'number_decimal',
+      'label'       => $t('Session use'),
+      'cardinality' => 1,
+      'translatable'=> 0,
+      'settings'    => array(
+        'precision' => '3',
+        'scale'     => '0',
+      ),
+    ),
+    'yubikey_timestamp_use' => array(
+      'field_name'  => 'yubikey_timestamp_use',
+      'type'        => 'number_decimal',
+      'label'       => $t('When was otp last used'),
+      'cardinality' => 1,
+      'translatable'=> 0,
+      'settings'    => array(
+        'precision' => '20',
+        'scale'     => '0',
+      ),
+    ),
+    'yubikey_last_timestamp' => array(
+      'field_name'  => 'yubikey_last_timestamp',
+      'type'        => 'number_decimal',
+      'label'       => $t('Last timestamp used'),
+      'cardinality' => 1,
+      'translatable'=> 0,
+      'settings'    => array(
+        'precision' => '8',
+        'scale'     => '0',
+      ),
+    ),
+    'yubivs_ksm' => array(
+      'field_name'  => 'yubivs_ksm',
+      'type'        => 'text',
+      'label'       => $t('Key Storage Module'),
+      'cardinality' => FIELD_CARDINALITY_UNLIMITED,
+      'translatable'=> 0,
+      'settings'    => array(
+        'max_length'     => 255,
+      ),
+    ),
+  );
+}
+
+function _yubivs_installed_instances() {
+  $t = get_t();
+  return array(
+    'yubikey_public_id' => array(
+      'field_name'    => 'yubikey_public_id',
+      'label'         => $t('Yubikey Public ID'),
+      'cardinality'   => 1,
+      'required'      => TRUE,
+      'default_value' => array(''),
+      'widget'        => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'node_yubikey_list' => array(
+          'label' => 'hidden',
+          'type' => 'node_yubikey_public_ids',
+        ),
+      ),
+    ),
+    'yubikey_private_id' => array(
+      'field_name'    => 'yubivs_hexadecimal',
+      'label'         => $t('Yubikey Private ID'),
+      'cardinality'   => 1,
+      'required'      => TRUE,
+      'default_value' => array(array('hexadecimal' => '000000')),
+      'settings'      => array(
+        'size' => 6,
+      ),
+      'widget'        => array(
+        'type' => 'yubivs_hexadecimal_widget',
+      ),
+      'display' => array(
+        'node_yubikey_list' => array(
+          'label' => 'hidden',
+          'type' => 'yubivs_hexadecimal_formatter',
+        ),
+      ),
+    ),
+
+    /*
+     * Yubikey internal clock in yubikey 1.0 has a 20% tolerance while version 2
+     * and up has 2%. I will try to be as close as possible to the clock.
+     * Thus if you select 2.0 while using a 1.0 version, and if clock has more 
+     * than 2% tolerance it will fail.
+     */
+    'yubikey_type' => array(
+      'field_name'    => 'yubivs_type',
+      'label'         => $t('Yubikey type'),
+      'cardinality'   => 1,
+      'required'      => TRUE,
+      'default_value' => array(array('value' => 'Yubikey Firmware 1.0')),
+      'description'   => $t('Security values depends on this settings, in case you don\'t know please select %default_option. Otherwise otp validation may fail.', array('%default_option' => 'Yubikey Firmware 1.0')),
+      'settings'      => array(
+        'size' => 6,
+      ),
+      'widget'        => array(
+        'type' => 'options_buttons',
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'above',
+          'type' => 'list_default',
+        ),
+      ),
+    ),
+    'yubikey_session_counter' => array(
+      'field_name'    => 'yubikey_session_counter',
+      'label'         => $t('Session counter'),
+      'cardinality'   => 1,
+      'required'      => TRUE,
+      'default_value' => array(array('value' => '0')),
+      'description'   => $t('Counts how many times the yubikey has been plugged'),
+      'settings'      => array(
+        'min' => 0,
+        'max' => 65535,
+      ),
+      'widget'        => array(
+        'type'   => 'number',
+        'module' => 'number',
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'above',
+          'type' => 'number_decimal',
+          'settings' => array(
+            'thousand_separator' => ' ',
+            'decimal_separator' => '.',
+          ),
+        ),
+      ),
+    ),
+    'yubikey_session_use' => array(
+      'field_name'    => 'yubikey_session_use',
+      'label'         => $t('Session use'),
+      'cardinality'   => 1,
+      'required'      => TRUE,
+      'default_value' => array(array('value' => '0')),
+      'description'   => $t('Counts current session key usage'),
+      'settings'      => array(
+        'min' => 0,
+        'max' => 255,
+      ),
+      'widget'        => array(
+        'type'   => 'number',
+        'module' => 'number',
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'above',
+          'type' => 'number_decimal',
+          'settings' => array(
+            'thousand_separator' => ' ',
+            'decimal_separator' => '.',
+          ),
+        ),
+      ),
+    ),
+    'yubikey_timestamp_use' => array(
+      'field_name'    => 'yubikey_timestamp_use',
+      'label'         => $t('Last timestamp used'),
+      'cardinality'   => 1,
+      'required'      => TRUE,
+      'default_value' => array(array('value' => '0')),
+      'description'   => $t('Timestamp in last generated otp'),
+      'settings'      => array(
+        'min' => 0,
+        'max' => 16777215,
+      ),
+      'widget'        => array(
+        'type'   => 'number',
+        'module' => 'number',
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'above',
+          'type' => 'number_decimal',
+          'settings' => array(
+            'thousand_separator' => ' ',
+            'decimal_separator' => '.',
+          ),
+        ),
+      ),
+    ),
+    'yubikey_last_timestamp' => array(
+      'field_name'    => 'yubikey_last_timestamp',
+      'label'         => $t('When was otp last used'),
+      'cardinality'   => 1,
+      'required'      => TRUE,
+      'default_value' => array(array('value' => '0')),
+      'description'   => $t('Timestamp of last generated otp'),
+      'settings'      => array(
+        'min' => 0,
+        'max' => 2^64,
+      ),
+      'widget'        => array(
+        'type'   => 'number',
+        'module' => 'number',
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'above',
+          'type' => 'number_decimal',
+          'settings' => array(
+            'thousand_separator' => ' ',
+            'decimal_separator' => '.',
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+// EOF

@@ -1,0 +1,15 @@
+; $Id$
+name = Yubikey validation server
+description = "Provides a Yubikey compatible validation server module."
+package = Yubikey
+
+; Purposively added for feature development.
+version = 7.x-0.x-dev
+core = 7.x
+project = yubivs
+
+files[] = yubivs.module
+files[] = yubivs.install
+files[] = yubivs.pages.inc
+files[] = yubivs.tools.inc
+

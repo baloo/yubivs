@@ -1,0 +1,320 @@
+<?php
+// $Id$
+
+/**
+ * @file 
+ * This file is the main code for implementing Yubico validation server in drupal
+ */
+
+/**
+ * Implements hook_node_info() to provide our node_yubikey type.
+ */
+function yubivs_node_info() {
+  return array(
+    'node_yubikey' => array(
+      'name' => t('Yubikey Node'),
+      'base' => 'yubivs',
+      'description' => t('This node stores informations related to yubikeys'),
+      'has_title' => TRUE,
+      'title_label' => t('Yubikey name'),
+    ),
+  );
+}
+
+
+/**
+ * Implements hook_field_info().
+ *
+ * Provides the description of the following fields:
+ * - Hexadecimal field
+ */
+function yubivs_field_info() {
+  return array(
+    'yubivs_hexadecimal' => array(
+      'label' => t('Hexadecimal'),
+      'description' => t('Permits user to enter hexadecimal values.'),
+      'default_widget' => 'yubivs_hexadecimal_widget',
+      'default_formatter' => 'yubivs_hexadecimal_formatter',
+      'instance_settings' => array('size' => 2),
+    ),
+  );
+}
+
+
+/**
+ * Implements hook_field_schema().
+ *
+ * This defines the actual database schema of the field, using the format
+ * used by the Schema API.
+ *
+ * The actual data we store here are just text element
+ */
+function yubivs_field_schema($field) {
+  $columns = array(
+    'hexadecimal' => array('type' => 'text'),
+  );
+  return array(
+    'columns' => $columns,
+  );
+}
+
+
+/**
+ * Implements hook_field_validate().
+ *
+ * Verifies that hexadecimal field is valid
+ */
+function yubivs_field_validate($entity_type, $entity, $field, $instance, $langcode, $items, &$errors) {
+  switch ($field['type']) {
+    case 'yubivs_hexadecimal':
+      foreach ($items as $delta => $item) {
+        if (preg_match('#^[0-9a-f]{1,2}([ :\-]?[0-9a-f]{2})*$#i', $item['hexadecimal']) === 0) {
+          $errors[$field['field_name']][$langcode][$delta][] = array(
+            'error' => 'yubivs_invalid_format',
+            'message' => t('Scheme must respect this format : "0:00" or "00:00" or "00 00" or "00-00"'),
+          );
+        }
+        $value = preg_replace('#[^0-9a-f]#i', '', $item['hexadecimal']);
+
+        if (strlen($value) != $instance['settings']['size']) {
+          $errors[$field['field_name']][$langcode][$delta][] = array(
+            'error' => 'yubivs_invalid_length',
+            'message' => t('Scheme must have %length hexadecimal characters', array('%length' => $instance['settings']['size'])),
+          );
+        }
+      }
+      break;
+  }
+}
+
+
+/**
+ * Implements hook_field_presave().
+ */
+function yubivs_field_presave($entity_type, $entity, $field, $instance, $langcode, &$items) {
+  switch ($field['type']) {
+    case 'yubivs_hexadecimal':
+      foreach ($items as $delta => $item) {
+        $item['hexadecimal'] = strtolower($item['hexadecimal']);
+        $items[$delta]['hexadecimal'] = preg_replace('#[^0-9a-f]#', '', $item['hexadecimal']);
+      }
+      break;
+  }
+}
+
+
+/**
+ * Implements hook_field_is_empty().
+ */
+function yubivs_field_is_empty($item, $field) {
+  // TODO
+  return FALSE;
+}
+
+
+/**
+ * Implements hook_field_formatter_info().
+ */
+function yubivs_field_formatter_info() {
+  return array(
+    'yubivs_hexadecimal_formatter' => array(
+      'label' => t('Simple hexadecimal formatter'),
+      'field types' => array('yubivs_hexadecimal'),
+    ),
+  );
+}
+
+
+/**
+ * Implements hook_field_formatter_view().
+ *
+ * One formatter is implemented.
+ * - yubivs_hexadecimal_formatter just outputs 00:00:00 type strings
+ */
+function yubivs_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+  $element = array();
+
+  switch($display['type']) {
+    case 'yubivs_hexadecimal_formatter':
+      foreach ($items as $delta => $item) {
+        $element[$delta] = array('#markup' => _yubivs_format_hexadecimal(strip_tags($item['hexadecimal'])));
+      }
+      break;
+  }
+  return $element;
+}
+
+
+/**
+ * Implements hook_field_widget_info().
+ */
+function yubivs_field_widget_info() {
+  return array(
+    'yubivs_hexadecimal_widget' => array(
+      'label' => t('Simple hexadecimal editor'),
+      'field types' => array('yubivs_hexadecimal'),
+    ),
+  );
+}
+
+
+/**
+ * Implements hook_field_widget_form().
+ */
+function yubivs_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+  $element['hexadecimal'] = array();
+
+  switch ($instance['widget']['type']) {
+    case 'yubivs_hexadecimal_widget':
+      $element['hexadecimal'] += array(
+        '#type' => 'textfield',
+        '#title' => $instance['label'],
+        '#default_value' => (isset($items[$delta])?_yubivs_format_hexadecimal(strip_tags($items[$delta]['hexadecimal'])):''),
+        '#required' => !empty($instance['required']),
+      );
+
+      break;
+  }
+
+  return $element;
+}
+
+
+function _yubivs_format_hexadecimal($value) {
+  if (strlen($value) %2){
+    return substr($value,0,1) .':'. implode(':', str_split(substr($value,1), 2)); 
+  }
+  else{
+    return implode(':', str_split($value, 2)); 
+  }
+}
+
+
+/**
+ * Implements hook_field_instance_settings_form().
+ */
+function yubivs_field_instance_settings_form($field, $instance) {
+  $settings = $instance['settings'];
+
+  $form['size'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Field content size'),
+    '#default_value' => $settings['size'],
+    '#description' => t('Enter how many hexadecimal characters you want in this field'),
+  );
+
+  return $form;
+}
+
+
+/**
+ * Implements hook_field_error().
+ */
+function yubivs_field_widget_error($element, $error, $form, &$form_state) {
+  switch ($error['error']) {
+    case 'yubivs_invalid_format':
+    case 'yubivs_invalid_length':
+      form_error($element, $error['message']);
+      break;
+  }
+}
+
+
+/**
+ * Implement of hook_form_alter() with the standard default form.
+ */
+function yubivs_form_node_yubikey_node_form_alter(&$form, &$form_state) {
+  /*
+   * Expert settings
+   */
+  $form['yubi_expert'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Yubikey expert settings'),
+    '#description' => '<div class="warning">'. t("DO NOT EDIT this settings unless you know what you're doing") .'</div>',
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+    '#group' => 'additional_settings',
+    '#weight' => 100,
+  );
+
+  $migrate = array(
+    'yubikey_session_counter',
+    'yubikey_session_use',
+    'yubikey_timestamp_use',
+    'yubikey_last_timestamp',
+    );
+  foreach ($migrate as $item) {
+    $form['yubi_expert'][$item] = $form[$item];
+    unset($form[$item]);
+  }
+
+  return $form;
+}
+
+
+/**
+ * Implements hook_menu()
+ */
+function yubivs_menu() {
+  $items = array();
+  $items['node/%yubivs_node_yubikey/init'] = array(
+    'title' => t('Initialize yubikey'), 
+    'page callback' => 'yubivs_node_yubikey_init',
+    'page arguments' => array(1),
+    'access callback' => 'node_access',
+    'access arguments' => array('update', 1),
+    'type' => MENU_LOCAL_TASK,
+    'file' => 'yubivs.pages.inc',
+  );
+
+  $items['node/%yubivs_node_yubikey/validate'] = array(
+    'title' => t('Validate yubikey'), 
+    'page callback' => 'yubivs_node_yubikey_validate',
+    'page arguments' => array(1),
+    'access callback' => 'node_access',
+    'access arguments' => array('update', 1),
+    'type' => MENU_LOCAL_TASK,
+    'file' => 'yubivs.pages.inc',
+  );
+
+  $items['admin/config/yubivs'] = array(
+    'title' => t('Yubikey validation server'), 
+    'description' => t('Administer yubikey validation server'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('yubivs_config_form'),
+    'access arguments' => array('access administration pages'),
+    'file' => 'yubivs.pages.inc',
+  );
+
+  return $items;
+}
+
+
+/**
+ * Autoloader for yubivs_menu
+ */
+function yubivs_node_yubikey_load($nid) {
+  $node = node_load($nid);
+  if (is_object($node) && $node->type === 'node_yubikey') {
+    return $node;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+/**
+ * Implements hook_help().
+ */
+function yubivs_help($path, $arg) {
+  switch($path) {
+    case 'node/%/init':
+      return '<p>'.t("This page provides an init form for yubikeys. If you'd just added this yubikey or if your yubikey always fail, you should use this form.").'</p>';
+      break;
+    case 'node/%/validate':
+      return '<p>'.t("This page provides a validate form for yubikeys. If you want to verify your yubikey (or debug ;)).").'</p>';
+      break;
+  }
+}
+
+// EOF
