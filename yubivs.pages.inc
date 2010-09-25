@@ -92,73 +92,74 @@ function yubivs_yubikey_otp_form_validate($form, $form_state) {
  * Config form
  */
 function yubivs_config_form($form, &$form_state) {
-
-  $field = field_info_field('yubivs_ksm');
-  //dsm($field);
-
-  $instance = array(
-    'label' => t('Yubikey KSM Url'),
-    'description' => '',
-    'entity_type' => 'text',
-    'widget' => array(
-      'module' => 'text',
-      'type' => 'text_textfield',
-      'settings' => array(
-        'size' => 25,
-      ),
-    ),
-    'settings' => array(
-      'text_processing' => FALSE,
-    ),
-    'bundle' => 'config',
-    'required' => TRUE,
-  );
-
-  $form_state['field'] = array(
-    'yubivs_ksm' => array(
-      LANGUAGE_NONE => array(
-        'field' => $field,
-        'array_parents' => array('yubivs_ksm'),
-      ),
-    ),
-  );
-
-  $items = array();
-
-  dsm($form_state);
-  $field_item_count = 0;
-  if (isset($form_state['complete form']) && isset($form_state['complete form']['yubivs_ksm'])) {
-    foreach ($form_state['complete form']['yubivs_ksm'] as $name => $item) {
-      if (!is_numeric($name) || 
-          !is_array($item) || 
-          !isset($item['#entity_type']) ||
-          $item['#entity_type'] != 'text' ||
-          !isset($item['value']) || 
-          !is_array($item['value'])){
-        continue;
-      }
-      $items[] = array('value' => $item['value']['#default_value']);
-      $field_item_count ++;
-    }
-    array_pop($items);
-    $field_item_count --;
-    $items[] = array('value' => $form_state['input']['value']);
-  }
-
-  $form_state['field_item_count'] = $field_item_count;
-
-  $field_elements = field_multiple_value_form($field, $instance, LANGUAGE_NONE, $items, $form, $form_state);
-  
-  dsm($field_elements);
-  //dsm($form_state);
-
-  $form['yubivs_ksm'] = $field_elements;
-
-  //dsm($form);
-
-
-  
-
+//
+//  $field = field_info_field('yubivs_ksm');
+//  //dsm($field);
+//
+//  $instance = array(
+//    'label' => t('Yubikey KSM Url'),
+//    'description' => '',
+//    'entity_type' => 'text',
+//    'widget' => array(
+//      'module' => 'text',
+//      'type' => 'text_textfield',
+//      'settings' => array(
+//        'size' => 25,
+//      ),
+//    ),
+//    'settings' => array(
+//      'text_processing' => FALSE,
+//    ),
+//    'bundle' => 'config',
+//    'required' => TRUE,
+//  );
+//
+//  $form_state['field'] = array(
+//    'yubivs_ksm' => array(
+//      LANGUAGE_NONE => array(
+//        'field' => $field,
+//        'array_parents' => array('yubivs_ksm'),
+//      ),
+//    ),
+//  );
+//
+//  $items = array();
+//
+//  $field_item_count = 0;
+//  if (isset($form_state['complete form']) && isset($form_state['complete form']['yubivs_ksm'])) {
+//    foreach ($form_state['complete form']['yubivs_ksm'] as $name => $item) {
+//      if (!is_numeric($name) || 
+//          !is_array($item) || 
+//          !isset($item['#entity_type']) ||
+//          $item['#entity_type'] != 'text' ||
+//          !isset($item['value']) || 
+//          !is_array($item['value'])){
+//        continue;
+//      }
+//      $items[] = array('value' => $item['value']['#default_value']);
+//      $field_item_count ++;
+//    }
+//    array_pop($items);
+//    $field_item_count --;
+//    $items[] = array('value' => $form_state['input']['value']);
+//  }
+//
+//  dsm($items);
+//
+//  $form_state['field_item_count'] = $field_item_count;
+//
+//  $field_elements = field_multiple_value_form($field, $instance, LANGUAGE_NONE, $items, $form, $form_state);
+//
+//  dsm($field_elements);
+//  //dsm($form_state);
+//
+//  $form['yubivs_ksm'] = $field_elements;
+//
+//  //dsm($form);
+//
+//
+//
+//
   return system_settings_form($form);
 }
 
